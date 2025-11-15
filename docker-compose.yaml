@@ -1,0 +1,22 @@
+services:
+  pr_mng_db:
+    image: postgres:14-alpine
+    container_name: pr_mng_db
+    ports:
+      - "5432:5432"
+    networks:
+      - pr_mng_net
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: pr_mng_db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+networks:
+  pr_mng_net:
+    driver: bridge
+
+volumes:
+  db_data:

@@ -1,0 +1,8 @@
+package codes
+
+type CODE string
+
+const (
+	NOT_FOUND   CODE = "NOT_FOUND"
+	TEAM_EXISTS CODE = "TEAM_EXISTS"
+)
