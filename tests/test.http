@@ -16,11 +16,10 @@ POST http://localhost:8080/team/add
   ]
 }
 
-
-HTTP/1.1 400  - Bad Request
+HTTP/1.1 201  - Created
 content-type: application/json; charset=utf-8
-date: Sat, 15 Nov 2025 09:31:16 GMT
-content-length: 69
+date: Sat, 15 Nov 2025 09:37:13 GMT
+content-length: 150
 connection: close
 ###
 GET http://localhost:8080/team/get?team_name=backend
