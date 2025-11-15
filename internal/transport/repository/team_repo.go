@@ -40,13 +40,13 @@ func (t *teamRepository) AddNewTeam(teamName string, members *[]domain.User) err
 		logrus.Error(logPrefix, err.Error())
 		return &errs.InternalError{}
 	}
-	defer tx.Rollback(reqCtx) // Важно: откат при ошибке
+	defer tx.Rollback(reqCtx)
 
 	// 1. Вставляем команду
 	_, err = tx.Exec(reqCtx, `INSERT INTO teams (name) VALUES ($1)`, teamName)
 	if err != nil {
-		if strings.Contains(err.Error(), "dublicate") {
-			return &errs.DublicateError{
+		if strings.Contains(err.Error(), "dublicate") || strings.Contains(err.Error(), "duplicate") {
+			return &errs.AlreadyExistsError{
 				Domain: "team_name",
 			}
 		}

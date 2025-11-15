@@ -39,12 +39,6 @@ func (t *teamUseCase) AddTeam(team *dto.TeamRequest) error {
 
 // GetTeamByName implements domain.TeamService.
 func (t *teamUseCase) GetTeamByName(teamName string) (*dto.TeamResponse, error) {
-	if err := validateTeam(&dto.TeamRequest{TeamName: teamName}, true); err != nil {
-		return nil, &errs.InvalidError{
-			Domain: "team_name",
-			Desc:   err.Error(),
-		}
-	}
 	team, err := t.repo.GetTeamInfoByName(teamName)
 	if err != nil {
 		return nil, err

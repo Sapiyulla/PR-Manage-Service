@@ -28,11 +28,18 @@ func (h *TeamHandler) AddTeamHandler(c *gin.Context) {
 	}
 	if err := h.usecase.AddTeam(&team); err != nil {
 		switch err.(type) {
+		case *errs.InvalidError:
+			c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+				Err: dto.ErrorResponseBody{
+					Code: codes.INVALID_INPUT,
+					Msg:  err.Error(),
+				},
+			})
 		// 500
 		case *errs.InternalError:
 			c.Status(http.StatusInternalServerError)
 			return
-			// 400
+		// 400
 		case *errs.AlreadyExistsError:
 			c.JSON(http.StatusBadRequest, dto.ErrorResponse{
 				Err: dto.ErrorResponseBody{
@@ -51,11 +58,23 @@ func (h *TeamHandler) AddTeamHandler(c *gin.Context) {
 func (h *TeamHandler) GetTeamHandler(c *gin.Context) {
 	queryTeamName, has := c.GetQuery("team_name")
 	if !has {
-		c.Status(http.StatusBadRequest)
+		c.JSON(http.StatusNotFound, dto.ErrorResponse{
+			Err: dto.ErrorResponseBody{
+				Code: codes.NOT_FOUND,
+				Msg:  "team not found",
+			},
+		})
 		return
 	}
 	if team, err := h.usecase.GetTeamByName(queryTeamName); err != nil {
 		switch err.(type) {
+		case *errs.InvalidError:
+			c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+				Err: dto.ErrorResponseBody{
+					Code: codes.INVALID_INPUT,
+					Msg:  err.Error(),
+				},
+			})
 		case *errs.InternalError:
 			c.Status(http.StatusInternalServerError)
 			return

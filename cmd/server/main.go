@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"pr-manage-service/internal/application/usecases"
+	"pr-manage-service/internal/interfaces/handlers"
+	"pr-manage-service/internal/transport/repository"
 	"strings"
 	"sync"
 	"time"
@@ -67,15 +70,16 @@ func main() {
 	poolCancel()
 
 	// team depends
-	_ = pool
-	//teamHandler := handlers.NewTeamHandler()
+	teamRepository := repository.NewTeamRepository(ctx, pool, 2*time.Second)
+	teamUseCase := usecases.NewTeamUseCase(teamRepository)
+	teamHandler := handlers.NewTeamHandler(teamUseCase)
 
 	r := gin.Default()
-	// teamApi := r.Group("/team")
-	// {
-	// 	teamApi.POST("/add", teamHandler.AddTeamHandler)
-	// 	teamApi.GET("/get", teamHandler.GetTeamHandler)
-	// }
+	teamApi := r.Group("/team")
+	{
+		teamApi.POST("/add", teamHandler.AddTeamHandler)
+		teamApi.GET("/get", teamHandler.GetTeamHandler)
+	}
 
 	server := &http.Server{
 		Addr:    ":8080",

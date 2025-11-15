@@ -18,10 +18,20 @@ func init() {
 	})
 }
 
+func clearDatabase(t *testing.T, p *pgxpool.Pool) {
+	_, err1 := p.Exec(context.Background(), `DELETE FROM users`)
+	_, err2 := p.Exec(context.Background(), `DELETE FROM teams`)
+	if err1 != nil && err2 != nil {
+		t.Errorf("delete error: team: %s | user: %s", err2.Error(), err1.Error())
+	}
+}
+
 func TestAddNewTeam(t *testing.T) {
 	dsn := "postgres://postgres:password@localhost:5432/pr_mng_db?sslmode=disable"
 	fmt.Println("DSN: ", dsn)
 	pool, _ := pgxpool.New(context.Background(), dsn)
+
+	defer clearDatabase(t, pool)
 
 	tests := []struct {
 		name     string
@@ -115,12 +125,6 @@ func TestAddNewTeam(t *testing.T) {
 			}
 		})
 	}
-
-	// _, err1 := pool.Exec(context.Background(), `DELETE FROM users`)
-	// _, err2 := pool.Exec(context.Background(), `DELETE FROM teams`)
-	// if err1 != nil && err2 != nil {
-	// 	t.Errorf("delete error: team: %s | user: %s", err2.Error(), err1.Error())
-	// }
 }
 
 // Вспомогательная функция для генерации слишком большого количества участников
@@ -141,14 +145,36 @@ func TestGetTeamInfoByName(t *testing.T) {
 	fmt.Println("DSN: ", dsn)
 	pool, _ := pgxpool.New(context.Background(), dsn)
 
+	defer clearDatabase(t, pool)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	repo := NewTeamRepository(ctx, pool, 10*time.Second)
+	// 1. Создание команд(ы) с пользователями / без пользователей
+	teamName := "backend"
+	users := &[]domain.User{
+		{UserID: "u1", UserName: "Max", IsActive: true},
+		{UserID: "u2", UserName: "Alexandr", IsActive: true},
+	}
 
-	if team, err := repo.GetTeamInfoByName("existing_team"); err != nil {
+	expTeam := domain.Team{TeamName: teamName, Members: *users}
+
+	// 2. Запрос
+	if err := repo.AddNewTeam(teamName, users); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// 3. Проверка выходных данных
+	if team, err := repo.GetTeamInfoByName(teamName); err != nil {
 		t.Error(err.Error())
 	} else {
-		t.Logf("%+v", team)
+		if team.TeamName != expTeam.TeamName {
+			t.Error("team_name not equal")
+		}
+		if len(team.Members) != len(expTeam.Members) {
+			t.Error("members len not equal")
+		}
 	}
 }

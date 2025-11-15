@@ -1,0 +1,32 @@
+POST http://localhost:8080/team/add
+
+{
+  "team_name": "backend",
+  "members": [
+    {
+      "user_id": "u1",
+      "username": "Alice",
+      "is_active": true
+    },
+    {
+      "user_id": "u2",
+      "username": "Bob",
+      "is_active": true
+    }
+  ]
+}
+
+
+HTTP/1.1 400  - Bad Request
+content-type: application/json; charset=utf-8
+date: Sat, 15 Nov 2025 09:31:16 GMT
+content-length: 69
+connection: close
+###
+GET http://localhost:8080/team/get?team_name=backend
+
+HTTP/1.1 200  - OK
+content-type: application/json; charset=utf-8
+date: Sat, 15 Nov 2025 09:31:21 GMT
+content-length: 139
+connection: close
