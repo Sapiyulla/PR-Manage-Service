@@ -1,7 +1,24 @@
 services:
+  pr-mng-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pr-manage-service
+    networks:
+      - pr_mng_net
+    ports:
+      - "8080:8080"
+    environment:
+      DSN: postgres://postgres:password@pr_mng_db:5432/pr_mng_db?sslmode=disable
+      ADMIN_TOKEN: admin
+      MODE: debug
+    depends_on:
+      - pr_mng_db
+
   pr_mng_db:
     image: postgres:14-alpine
     container_name: pr_mng_db
+    hostname: pr_mng_db
     ports:
       - "5432:5432"
     networks:

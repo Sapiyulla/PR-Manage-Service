@@ -34,4 +34,5 @@ type PRRepository interface {
 	GetWithUser(*User) (*[]PullRequest, error)
 	CreateNewPR(*PullRequest) (assigned_reviewers []string, err error)
 	Merge(prID string) (pr *PullRequest, assigned_reviewers []string, err error)
+	Reassign(prID string, userID string) (pr *PullRequest, assigned_reviewers []string, replacedUserID string, err error)
 }

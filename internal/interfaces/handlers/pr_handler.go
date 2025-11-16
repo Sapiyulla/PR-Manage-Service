@@ -89,11 +89,29 @@ func (h *PrHandler) ReassignHandler(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
-	if _, err := h.usecase.Reassign(req.PrID, req.OldRevID); err != nil {
-		switch err.(type) {
-
+	if resp, err := h.usecase.Reassign(req.PrID, req.OldRevID); err != nil {
+		switch v := err.(type) {
+		case *errs.DomainError:
+			c.JSON(http.StatusConflict, dto.ErrorResponse{
+				Err: dto.ErrorResponseBody{
+					Code: v.Code,
+					Msg:  err.Error(),
+				},
+			})
+			return
+		case *errs.NotFoundError:
+			c.JSON(http.StatusNotFound, dto.ErrorResponse{
+				Err: dto.ErrorResponseBody{
+					Code: codes.NOT_FOUND,
+					Msg:  err.Error(),
+				},
+			})
+		case *errs.InternalError:
+			c.Status(http.StatusInternalServerError)
+			return
 		}
 	} else {
-
+		c.JSON(http.StatusOK, resp)
+		return
 	}
 }

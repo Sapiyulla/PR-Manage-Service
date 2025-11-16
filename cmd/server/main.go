@@ -108,6 +108,7 @@ func main() {
 	{
 		prApi.POST("create", prHandler.CreateHandler)
 		prApi.POST("/merge", prHandler.MergeHandler)
+		prApi.POST("/reassign", prHandler.ReassignHandler)
 	}
 
 	server := &http.Server{

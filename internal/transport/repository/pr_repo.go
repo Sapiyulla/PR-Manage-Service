@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"pr-manage-service/internal/domain"
+	"pr-manage-service/pkg/codes"
 	"pr-manage-service/pkg/errs"
 	"strings"
 	"time"
@@ -17,89 +18,6 @@ type PullRequestRepository struct {
 	ctx      context.Context
 	pool     *pgxpool.Pool
 	rtimeout time.Duration
-}
-
-// GetWithUser implements domain.PRRepository.
-func (r *PullRequestRepository) GetWithUser(user *domain.User) (*[]domain.PullRequest, error) {
-	reqCtx, cancel := context.WithTimeout(r.ctx, r.rtimeout)
-	defer cancel()
-
-	tx, err := r.pool.Begin(reqCtx)
-	if err != nil {
-		logrus.Error(logPrefix, err.Error())
-		return nil, &errs.InternalError{}
-	}
-	defer tx.Rollback(reqCtx)
-
-	var internalUserID int
-	err = tx.QueryRow(reqCtx,
-		`SELECT id FROM users WHERE user_id = $1 AND team_name = $2`,
-		user.UserID, user.TeamName).Scan(&internalUserID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &errs.NotFoundError{Domain: "user"}
-		}
-		logrus.Error(logPrefix, err.Error())
-		return nil, &errs.InternalError{}
-	}
-
-	rows, err := tx.Query(reqCtx, `
-        SELECT 
-            p.id, p.name, 
-            author.user_id as author_user_id, 
-            author.team_name as author_team_name,
-            p.status, p.need_more_reviewers, p.created_at, p.updated_at
-        FROM prs p
-        JOIN users author ON p.author_id = author.id
-        WHERE p.author_id = $1 
-           OR p.id IN (
-               SELECT pr_id FROM pr_reviewers WHERE user_id = $1
-           )
-        ORDER BY p.created_at DESC
-    `, internalUserID)
-
-	if err != nil {
-		logrus.Error(logPrefix, err.Error())
-		return nil, &errs.InternalError{}
-	}
-	defer rows.Close()
-
-	var pullRequests []domain.PullRequest
-	for rows.Next() {
-		var pr domain.PullRequest
-		var status string
-
-		err := rows.Scan(
-			&pr.PrID, &pr.PrName,
-			&pr.AuthorID, &pr.TeamName,
-			&status, &pr.NeedMoreReviewers, &pr.CreatedAt, &pr.UpdatedAt,
-		)
-		if err != nil {
-			logrus.Error(logPrefix, err.Error())
-			return nil, &errs.InternalError{}
-		}
-
-		// Конвертируем строковый статус в доменный тип
-		if status == string(domain.OPEN) {
-			pr.Status = domain.OPEN
-		} else if status == "MERGED" {
-			pr.Status = domain.MERGED
-		}
-
-		pullRequests = append(pullRequests, pr)
-	}
-
-	if err := rows.Err(); err != nil {
-		logrus.Error(logPrefix, err.Error())
-		return nil, &errs.InternalError{}
-	}
-
-	if err := tx.Commit(reqCtx); err != nil {
-		logrus.Error(logPrefix, err.Error())
-		return nil, &errs.InternalError{}
-	}
-
-	return &pullRequests, nil
 }
 
 func NewPullRequestRepository(ctx context.Context, pool *pgxpool.Pool, rtimeout time.Duration) domain.PRRepository {
@@ -314,4 +232,265 @@ func (r *PullRequestRepository) Merge(prID string) (pr *domain.PullRequest, assi
 	}
 
 	return pr, assigned_reviewers, nil
+}
+
+// Reassign implements domain.PRRepository.
+func (r *PullRequestRepository) Reassign(prID string, userID string) (pr *domain.PullRequest, assigned_reviewers []string, replacedUserID string, err error) {
+	reqCtx, cancel := context.WithTimeout(r.ctx, r.rtimeout)
+	defer cancel()
+
+	tx, err := r.pool.Begin(reqCtx)
+	if err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+	defer tx.Rollback(reqCtx)
+
+	// Проверяем статус PR
+	var status string
+	err = tx.QueryRow(reqCtx, `SELECT status FROM prs WHERE id = $1`, prID).Scan(&status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, "", &errs.NotFoundError{Domain: "pull request"}
+		}
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	if status == "MERGED" {
+		return nil, nil, "", &errs.DomainError{Code: codes.PR_MERGED}
+	}
+
+	// Получаем информацию о PR и авторе
+	var (
+		prName            string
+		authorInternalID  int
+		needMoreReviewers bool
+		createdAt         time.Time
+		updatedAt         time.Time
+		authorUserID      string
+		teamName          string
+	)
+
+	err = tx.QueryRow(reqCtx, `
+        SELECT p.name, p.author_id, p.need_more_reviewers, p.created_at, p.updated_at,
+               u.user_id, u.team_name
+        FROM prs p
+        JOIN users u ON p.author_id = u.id
+        WHERE p.id = $1
+    `, prID).Scan(&prName, &authorInternalID, &needMoreReviewers, &createdAt, &updatedAt,
+		&authorUserID, &teamName)
+
+	if err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	// Проверяем, что пользователь назначен ревьювером на этот PR
+	var reviewerInternalID int
+	err = tx.QueryRow(reqCtx, `
+        SELECT u.id FROM users u
+        JOIN pr_reviewers prr ON u.id = prr.user_id
+        WHERE u.user_id = $1 AND prr.pr_id = $2
+    `, userID, prID).Scan(&reviewerInternalID)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, "", &errs.DomainError{Code: codes.NOT_ASSIGNED}
+		}
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	// Ищем кандидата для замены (активный пользователь из той же команды, кроме автора и текущего ревьювера)
+	var candidateUserID string
+	var candidateInternalID int
+	err = tx.QueryRow(reqCtx, `
+        SELECT user_id, id FROM users 
+        WHERE team_name = $1 
+          AND is_active = true 
+          AND user_id != $2 
+          AND id != $3
+          AND id NOT IN (
+              SELECT user_id FROM pr_reviewers WHERE pr_id = $4
+          )
+        ORDER BY id 
+        LIMIT 1
+    `, teamName, authorUserID, reviewerInternalID, prID).Scan(&candidateUserID, &candidateInternalID)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, "", &errs.DomainError{Code: codes.NO_CANDIDATE}
+		}
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	// Удаляем старого ревьювера
+	if _, err := tx.Exec(reqCtx, `
+        DELETE FROM pr_reviewers 
+        WHERE pr_id = $1 AND user_id = $2
+    `, prID, reviewerInternalID); err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	// Добавляем нового ревьювера
+	if _, err := tx.Exec(reqCtx, `
+        INSERT INTO pr_reviewers (pr_id, user_id, team_name) 
+        VALUES ($1, $2, $3)
+    `, prID, candidateInternalID, teamName); err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	// Проверяем количество ревьюверов для определения need_more_reviewers
+	var reviewerCount int
+	err = tx.QueryRow(reqCtx, `
+        SELECT COUNT(*) FROM pr_reviewers WHERE pr_id = $1
+    `, prID).Scan(&reviewerCount)
+
+	if err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	newNeedMoreReviewers := reviewerCount < 2
+
+	// Обновляем флаг need_more_reviewers если изменился
+	if needMoreReviewers != newNeedMoreReviewers {
+		if _, err := tx.Exec(reqCtx, `
+            UPDATE prs SET need_more_reviewers = $1, updated_at = $2 
+            WHERE id = $3
+        `, newNeedMoreReviewers, time.Now(), prID); err != nil {
+			logrus.Error(logPrefix, err.Error())
+			return nil, nil, "", &errs.InternalError{}
+		}
+		needMoreReviewers = newNeedMoreReviewers
+	}
+
+	// Получаем обновленный список ревьюверов
+	rows, err := tx.Query(reqCtx, `
+        SELECT u.user_id 
+        FROM pr_reviewers prr
+        JOIN users u ON prr.user_id = u.id
+        WHERE prr.pr_id = $1
+    `, prID)
+
+	if err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var reviewerUserID string
+		if err := rows.Scan(&reviewerUserID); err != nil {
+			logrus.Error(logPrefix, err.Error())
+			return nil, nil, "", &errs.InternalError{}
+		}
+		assigned_reviewers = append(assigned_reviewers, reviewerUserID)
+	}
+
+	// Создаем объект PR для возврата
+	pr = &domain.PullRequest{
+		PrID:              prID,
+		PrName:            prName,
+		AuthorID:          authorUserID,
+		TeamName:          teamName,
+		Status:            domain.OPEN, // Мы знаем, что статус не MERGED
+		NeedMoreReviewers: needMoreReviewers,
+		CreatedAt:         createdAt,
+		UpdatedAt:         time.Now(), // Обновляем время
+	}
+
+	if err := tx.Commit(reqCtx); err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, nil, "", &errs.InternalError{}
+	}
+
+	return pr, assigned_reviewers, candidateUserID, nil
+}
+
+// GetWithUser implements domain.PRRepository.
+func (r *PullRequestRepository) GetWithUser(user *domain.User) (*[]domain.PullRequest, error) {
+	reqCtx, cancel := context.WithTimeout(r.ctx, r.rtimeout)
+	defer cancel()
+
+	tx, err := r.pool.Begin(reqCtx)
+	if err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, &errs.InternalError{}
+	}
+	defer tx.Rollback(reqCtx)
+
+	var internalUserID int
+	err = tx.QueryRow(reqCtx,
+		`SELECT id FROM users WHERE user_id = $1 AND team_name = $2`,
+		user.UserID, user.TeamName).Scan(&internalUserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &errs.NotFoundError{Domain: "user"}
+		}
+		logrus.Error(logPrefix, err.Error())
+		return nil, &errs.InternalError{}
+	}
+
+	rows, err := tx.Query(reqCtx, `
+        SELECT 
+            p.id, p.name, 
+            author.user_id as author_user_id, 
+            author.team_name as author_team_name,
+            p.status, p.need_more_reviewers, p.created_at, p.updated_at
+        FROM prs p
+        JOIN users author ON p.author_id = author.id
+        WHERE p.author_id = $1 
+           OR p.id IN (
+               SELECT pr_id FROM pr_reviewers WHERE user_id = $1
+           )
+        ORDER BY p.created_at DESC
+    `, internalUserID)
+
+	if err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, &errs.InternalError{}
+	}
+	defer rows.Close()
+
+	var pullRequests []domain.PullRequest
+	for rows.Next() {
+		var pr domain.PullRequest
+		var status string
+
+		err := rows.Scan(
+			&pr.PrID, &pr.PrName,
+			&pr.AuthorID, &pr.TeamName,
+			&status, &pr.NeedMoreReviewers, &pr.CreatedAt, &pr.UpdatedAt,
+		)
+		if err != nil {
+			logrus.Error(logPrefix, err.Error())
+			return nil, &errs.InternalError{}
+		}
+
+		// Конвертируем строковый статус в доменный тип
+		if status == string(domain.OPEN) {
+			pr.Status = domain.OPEN
+		} else if status == "MERGED" {
+			pr.Status = domain.MERGED
+		}
+
+		pullRequests = append(pullRequests, pr)
+	}
+
+	if err := rows.Err(); err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, &errs.InternalError{}
+	}
+
+	if err := tx.Commit(reqCtx); err != nil {
+		logrus.Error(logPrefix, err.Error())
+		return nil, &errs.InternalError{}
+	}
+
+	return &pullRequests, nil
 }

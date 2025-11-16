@@ -79,5 +79,19 @@ func (p *prUseCase) Merge(req *dto.PRCreateRequest) (*dto.PRMergeResponse, error
 
 // Reassign implements domain.PRService.
 func (p *prUseCase) Reassign(prID string, oldRevID string) (*dto.PRReassignResponse, error) {
-	panic("unimplemented")
+	if resp, revs, replacedUserID, err := p.repo.Reassign(prID, oldRevID); err != nil {
+		return nil, err
+	} else {
+		return &dto.PRReassignResponse{
+			PR: dto.PRResponse{
+				PullRequestID:     resp.PrID,
+				PullRequestName:   resp.PrName,
+				AuthorID:          resp.AuthorID,
+				TeamName:          resp.TeamName,
+				Status:            string(resp.Status),
+				AssignedReviewers: revs,
+			},
+			ReplacedBy: replacedUserID,
+		}, nil
+	}
 }

@@ -4,16 +4,12 @@ run:
 
 build:
 	go build -ldflags="-s -w" cmd/server/main.go
-	.\main.exe
 
 build-linux-amd64:
-	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" cmd/server/main.go
-	main
+	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/app cmd/server/main.go
 
 build-darwin-arm64:
-	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" cmd/server/main.go
-	main
+	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/app cmd/server/main.go
 	
 build-windows:
-	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" cmd/server/main.go
-	main
+	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/app cmd/server/main.go
