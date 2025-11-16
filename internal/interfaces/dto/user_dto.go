@@ -10,3 +10,12 @@ type UserResponse struct {
 	*UserRequest
 	UserName string `json:"username"`
 }
+
+type UserFullResponse struct {
+	User UserResponse `json:"user"`
+}
+
+type UserPRsResponse struct {
+	UserID       string       `json:"user_id"`
+	PullRequests []PRResponse `json:"pull_requests"`
+}

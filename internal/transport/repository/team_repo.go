@@ -17,22 +17,22 @@ import (
 const logPrefix = "(database) error:"
 
 type teamRepository struct {
-	ctx     context.Context
-	pool    *pgxpool.Pool
-	timeout time.Duration
+	ctx      context.Context
+	pool     *pgxpool.Pool
+	rtimeout time.Duration
 }
 
-func NewTeamRepository(ctx context.Context, pool *pgxpool.Pool, timeout time.Duration) domain.TeamRepository {
+func NewTeamRepository(ctx context.Context, pool *pgxpool.Pool, rtimeout time.Duration) domain.TeamRepository {
 	return &teamRepository{
-		ctx:     ctx,
-		pool:    pool,
-		timeout: timeout,
+		ctx:      ctx,
+		pool:     pool,
+		rtimeout: rtimeout,
 	}
 }
 
 // AddNewTeam implements domain.TeamRepository.
 func (t *teamRepository) AddNewTeam(teamName string, members *[]domain.User) error {
-	reqCtx, cancel := context.WithTimeout(t.ctx, t.timeout)
+	reqCtx, cancel := context.WithTimeout(t.ctx, t.rtimeout)
 	defer cancel()
 
 	tx, err := t.pool.Begin(reqCtx)
@@ -108,7 +108,7 @@ func ParallelExecute(ctx context.Context, wg *sync.WaitGroup, tx pgx.Tx, sql str
 
 // GetTeamInfoByName implements domain.TeamRepository.
 func (t *teamRepository) GetTeamInfoByName(teamName string) (*domain.Team, error) {
-	reqCtx, cancel := context.WithTimeout(t.ctx, t.timeout)
+	reqCtx, cancel := context.WithTimeout(t.ctx, t.rtimeout)
 	defer cancel()
 	tx, err := t.pool.Begin(reqCtx)
 	if err != nil {

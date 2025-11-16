@@ -13,7 +13,7 @@ CREATE TABLE users (
 CREATE TYPE pr_status AS ENUM ('OPEN','MERGED');
 
 CREATE TABLE prs (
-  id serial PRIMARY KEY,
+  id text PRIMARY KEY,
   name text NOT NULL,
   author_id int REFERENCES users(id) NOT NULL,
   status pr_status NOT NULL DEFAULT 'OPEN',
@@ -23,8 +23,9 @@ CREATE TABLE prs (
 );
 
 CREATE TABLE pr_reviewers (
-  pr_id int REFERENCES prs(id) ON DELETE CASCADE,
+  pr_id text REFERENCES prs(id) ON DELETE CASCADE,
   user_id int REFERENCES users(id),
+  team_name text REFERENCES teams(name),
   assigned_at timestamptz DEFAULT now(),
   PRIMARY KEY (pr_id, user_id)
 );

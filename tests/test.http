@@ -1,7 +1,7 @@
 POST http://localhost:8080/team/add
 
 {
-  "team_name": "backend",
+  "team_name": "backend-2",
   "members": [
     {
       "user_id": "u1",
@@ -10,22 +10,82 @@ POST http://localhost:8080/team/add
     },
     {
       "user_id": "u2",
+      "username": "Notan",
+      "is_active": true
+    },
+    {
+      "user_id": "u3",
       "username": "Bob",
       "is_active": true
+    },
+    {
+      "user_id": "u4",
+      "username": "Alex",
+      "is_active": false
     }
   ]
 }
 
 HTTP/1.1 201  - Created
 content-type: application/json; charset=utf-8
-date: Sat, 15 Nov 2025 09:37:13 GMT
-content-length: 150
+date: Sun, 16 Nov 2025 12:52:48 GMT
+content-length: 256
 connection: close
 ###
-GET http://localhost:8080/team/get?team_name=backend
+GET http://localhost:8080/team/get?team_name=backend-2
 
 HTTP/1.1 200  - OK
 content-type: application/json; charset=utf-8
-date: Sat, 15 Nov 2025 09:31:21 GMT
-content-length: 139
+date: Sun, 16 Nov 2025 12:53:36 GMT
+content-length: 246
+connection: close
+###
+POST http://localhost:8080/users/setIsActive
+Admin-Token:admin
+
+{
+    "user_id": "u4",
+    "team_name": "backend-2",
+    "is_active": true
+}
+
+HTTP/1.1 200  - OK
+content-type: application/json; charset=utf-8
+date: Sun, 16 Nov 2025 12:53:34 GMT
+content-length: 84
+connection: close
+###
+GET http://localhost:8080/users/getReview?user_id=u4&team_name=backend-2
+
+HTTP/1.1 200  - OK
+content-type: application/json; charset=utf-8
+date: Sun, 16 Nov 2025 13:42:06 GMT
+content-length: 272
+connection: close
+###
+POST http://localhost:8080/pullRequest/create
+
+{
+  "pull_request_id": "pr-6",
+  "pull_request_name": "Add search",
+  "author_id": "u4",
+  "team_name": "backend-2"
+}
+
+HTTP/1.1 201  - Created
+content-type: application/json; charset=utf-8
+date: Sun, 16 Nov 2025 13:41:46 GMT
+content-length: 149
+connection: close
+###
+POST http://localhost:8080/pullRequest/merge
+
+{
+  "pull_request_id": "pr-6"
+}
+
+HTTP/1.1 200  - OK
+content-type: application/json; charset=utf-8
+date: Sun, 16 Nov 2025 13:42:02 GMT
+content-length: 203
 connection: close

@@ -28,6 +28,8 @@ const (
 var (
 	DSN  string
 	MODE Mode = Debug //default
+
+	ADMIN_TOKEN string
 )
 
 func init() {
@@ -36,10 +38,17 @@ func init() {
 	})
 	if mode := os.Getenv("MODE"); mode != "" {
 		switch strings.ToLower(mode) {
-		case "debug":
+		case "debug", "d":
 			MODE = Debug
 		case "prod", "production", "p":
 			MODE = Prod
+		}
+	}
+	if AdminToken := os.Getenv("ADMIN_TOKEN"); AdminToken != "" {
+		ADMIN_TOKEN = AdminToken
+		switch MODE {
+		case Debug:
+			log.Println("\033[33m(ENV)\033[39m ADMIN_TOKEN:\033[32m", AdminToken, "\033[39m")
 		}
 	}
 	switch MODE {
@@ -52,7 +61,7 @@ func init() {
 		log.Fatal("(ENV) DSN not setted")
 	} else {
 		if MODE == Debug {
-			log.Println("\033[33(mENV) \033[32mDSN:", dsn, "\033[39m")
+			log.Println("\033[33m(ENV)\033[39m DSN:\033[32m", dsn, "\033[39m")
 		}
 		DSN = dsn
 	}
@@ -74,11 +83,31 @@ func main() {
 	teamUseCase := usecases.NewTeamUseCase(teamRepository)
 	teamHandler := handlers.NewTeamHandler(teamUseCase)
 
+	// pr depends
+	prRepository := repository.NewPullRequestRepository(ctx, pool, 10*time.Second)
+	prUseCase := usecases.NewPrUseCase(prRepository)
+	prHandler := handlers.NewPRHandler(ctx, prUseCase)
+
+	// user depends
+	userRepository := repository.NewUserRepository(ctx, pool, 2*time.Second)
+	userUseCase := usecases.NewUserUseCase(userRepository, prUseCase)
+	userHandler := handlers.NewUserHandler(userUseCase, ADMIN_TOKEN)
+
 	r := gin.Default()
 	teamApi := r.Group("/team")
 	{
 		teamApi.POST("/add", teamHandler.AddTeamHandler)
 		teamApi.GET("/get", teamHandler.GetTeamHandler)
+	}
+	userApi := r.Group("/users")
+	{
+		userApi.POST("/setIsActive", userHandler.SetIsActiveHandler)
+		userApi.GET("/getReview", userHandler.GetReviewHandler)
+	}
+	prApi := r.Group("/pullRequest")
+	{
+		prApi.POST("create", prHandler.CreateHandler)
+		prApi.POST("/merge", prHandler.MergeHandler)
 	}
 
 	server := &http.Server{
